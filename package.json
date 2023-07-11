@@ -1,0 +1,25 @@
+{
+  "name": "knou-fetch",
+  "version": "1.0.0",
+  "description": "",
+  "keywords": [],
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "check:watch": "tsc --watch",
+    "fmt": "deno fmt",
+    "lint": "deno lint"
+  },
+  "dependencies": {
+    "remeda": "^1.23.0"
+  },
+  "devDependencies": {
+    "tsx": "^3.12.7",
+    "typescript": "^5.1.6",
+    "vitest": "^0.33.0"
+  },
+  "packageManager": "pnpm@8.6.7"
+}
