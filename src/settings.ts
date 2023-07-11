@@ -7,5 +7,5 @@ export const credentials = {
   password: process.env.KNOU_PASSWORD!,
 };
 
-// 금융시장론
+export const title = "금융시장론";
 export const cntsId = "KNOU1573";

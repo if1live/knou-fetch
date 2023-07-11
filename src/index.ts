@@ -1,6 +1,6 @@
 import { chromium, Page } from "playwright";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
+import { download } from "@perillamint/node-hls-downloader";
+import { setTimeout as delay } from "node:timers/promises";
 import * as settings from "./settings.js";
 import { Lecture, parseScript } from "./helpers.js";
 
@@ -9,7 +9,9 @@ const browser = await chromium.launch({
   args: ["--disable-dev-shm-usage"],
 });
 
-const context = await browser.newContext({});
+const context = await browser.newContext({
+  acceptDownloads: true,
+});
 const page = await context.newPage();
 
 const host = "https://ucampus.knou.ac.kr";
@@ -61,13 +63,62 @@ async function extractLectureList(page: Page): Promise<Lecture[]> {
   return lectures;
 }
 
-// await page.close();
+async function openLecturePopup(page: Page, sequence: number) {
+  const popupPromise = page.waitForEvent("popup");
 
-// process.exit();
+  const buttonNode = await page.$(`#sequens${sequence}`);
+  await buttonNode?.click();
+
+  const popup = await popupPromise;
+  await popup.waitForLoadState();
+
+  // 오리엔테이션이 붙는 경우, 페이지에 강의가 2개가 될수 있다. 마지막 강의를 선택
+  const script = await popup.innerHTML("#content script:last-of-type");
+  const lines = script.split("\n").map((x) => x.trimStart());
+
+  const line_hls = lines.find((x) => x.startsWith(`"hlsUrl"`)) ?? "";
+  const line_rtmp = lines.find((x) => x.startsWith(`"rtmpUrl"`)) ?? "";
+  const line_http = lines.find((x) => x.startsWith(`"httpUrl"`)) ?? "";
+
+  const re_url = /https:\/\/[a-zA-Z0-9./?=-]+/;
+
+  const url_hls = re_url.exec(line_hls)![0];
+  const url_rtmp = re_url.exec(line_rtmp)![0];
+  const url_http = re_url.exec(line_http)![0];
+
+  // hls 즉시 받기는 안되는데 일정시간 기다렸다 하니까 되더라. 뒤쪽에서 뭔가 돌아가는듯?
+  await delay(5000);
+
+  return [popup, url_hls] as const;
+}
 
 await signIn(page, settings.credentials);
 
 await gotoLecture(page, settings.cntsId);
 const lectures = await extractLectureList(page);
-const list = lectures.map((x) => parseScript(x.script));
-console.log(list);
+const list = lectures.map((x) => {
+  const link = parseScript(x.script);
+  return { title: x.title, link };
+});
+
+for (let i = 0; i < list.length; i++) {
+  const title = list[i].title;
+  const [popup, streamUrl] = await openLecturePopup(page, i);
+
+  const order = (i + 1).toString().padStart(2, "0");
+  const filename = `${settings.title}-${order}.mp4`;
+
+  console.log(`${title} - ${filename}`);
+  console.log(streamUrl);
+
+  await download({
+    quality: "best",
+    concurrency: 10,
+    outputFile: filename,
+    streamUrl: streamUrl,
+  });
+
+  await popup.close();
+}
+
+await page.close();

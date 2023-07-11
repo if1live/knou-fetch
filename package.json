@@ -14,6 +14,7 @@
     "lint": "deno lint"
   },
   "dependencies": {
+    "@perillamint/node-hls-downloader": "^2.0.0",
     "dotenv": "^16.3.1",
     "playwright": "^1.35.1",
     "remeda": "^1.23.0"
