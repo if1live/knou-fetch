@@ -98,9 +98,7 @@ async function openLecturePopup(page: Page, sequence: number) {
   });
   const urls = await Promise.all(promises);
 
-  await popup.close();
-
-  return urls.map((url_hls, idx) => {
+  const actions = urls.map((url_hls, idx) => {
     const a = weekly.toString().padStart(2, "0");
     const b = idx + 1;
     const filename = `${subject}-${a}-${b}.mp4`;
@@ -111,6 +109,19 @@ async function openLecturePopup(page: Page, sequence: number) {
       filename,
     };
   });
+
+  // 강의 페이지 열려있는 동안에 받는게 안전할듯
+  for (const action of actions) {
+    console.log(`${action.filename}`);
+    await download({
+      quality: "best",
+      concurrency: 10,
+      outputFile: action.filename,
+      streamUrl: action.url_hls,
+    });
+  }
+
+  await popup.close();
 }
 
 await signIn(page, settings.credentials);
@@ -122,20 +133,9 @@ const list = lectures.map((x) => {
   return { title: x.title, link };
 });
 
-const actions = [];
+// 중간 다운로드 할때 건드리기
 for (let i = 0; i < list.length; i++) {
-  const action = await openLecturePopup(page, i);
-  actions.push(...action);
-}
-
-for (const action of actions) {
-  console.log(`${action.filename}`);
-  await download({
-    quality: "best",
-    concurrency: 10,
-    outputFile: action.filename,
-    streamUrl: action.url_hls,
-  });
+  await openLecturePopup(page, i);
 }
 
 await page.close();
