@@ -1,7 +1,6 @@
 import { chromium, Page } from "playwright";
 import { download } from "@perillamint/node-hls-downloader";
 import * as settings from "./settings.js";
-import { Lecture, parseScript } from "./helpers.js";
 
 const cntsId = process.argv[2];
 
@@ -47,6 +46,11 @@ async function gotoLecture(page: Page, cntsId: string) {
 
   await page.goto(`${host}/ekp/user/course/initUCRCourse.sdo?${qs}`);
   await page.click(".tab-menu li:nth-child(2)");
+}
+
+interface Lecture {
+  title: string;
+  script: string;
 }
 
 async function extractLectureList(page: Page): Promise<Lecture[]> {
@@ -128,13 +132,9 @@ await signIn(page, settings.credentials);
 
 await gotoLecture(page, cntsId);
 const lectures = await extractLectureList(page);
-const list = lectures.map((x) => {
-  const link = parseScript(x.script);
-  return { title: x.title, link };
-});
 
 // 중간 다운로드 할때 건드리기
-for (let i = 0; i < list.length; i++) {
+for (let i = 0; i < lectures.length; i++) {
   await openLecturePopup(page, i);
 }
 
