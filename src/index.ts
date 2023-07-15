@@ -1,8 +1,15 @@
 import { chromium, Page } from "playwright";
 import { download } from "@perillamint/node-hls-downloader";
-import { setTimeout as delay } from "node:timers/promises";
 import * as settings from "./settings.js";
 import { Lecture, parseScript } from "./helpers.js";
+
+const cntsId = process.argv[2];
+
+// KNOU1573
+const re_cntsId = /KNOU\d{4}/;
+if (!re_cntsId.test(cntsId)) {
+  throw new Error("invalid ctnsId: valid format is KNOU1234");
+}
 
 const browser = await chromium.launch({
   headless: false,
@@ -72,53 +79,63 @@ async function openLecturePopup(page: Page, sequence: number) {
   const popup = await popupPromise;
   await popup.waitForLoadState();
 
-  // 오리엔테이션이 붙는 경우, 페이지에 강의가 2개가 될수 있다. 마지막 강의를 선택
-  const script = await popup.innerHTML("#content script:last-of-type");
-  const lines = script.split("\n").map((x) => x.trimStart());
+  const subject = await popup.innerText(".header-subject");
 
-  const line_hls = lines.find((x) => x.startsWith(`"hlsUrl"`)) ?? "";
-  const line_rtmp = lines.find((x) => x.startsWith(`"rtmpUrl"`)) ?? "";
-  const line_http = lines.find((x) => x.startsWith(`"httpUrl"`)) ?? "";
+  const weeklyText = await popup.innerText(".header-weekly span");
+  const weekly = parseInt(weeklyText.replace("강.", ""), 10);
 
-  const re_url = /https:\/\/[a-zA-Z0-9./?=-]+/;
+  // 오리엔테이션이 붙는 경우, 페이지에 강의가 2개가 될수 있다.
+  // 또는 강의 1개가 여러개고 쪼개진 경우도 있다.
+  const scriptElements = await popup.$$("#content script");
+  const promises = scriptElements.map(async (element) => {
+    const script = await element.innerHTML();
+    const lines = script.split("\n").map((x) => x.trimStart());
 
-  const url_hls = re_url.exec(line_hls)![0];
-  const url_rtmp = re_url.exec(line_rtmp)![0];
-  const url_http = re_url.exec(line_http)![0];
+    const line_hls = lines.find((x) => x.startsWith(`"hlsUrl"`)) ?? "";
+    const re_url = /"(https:.+)"/;
+    const url_hls = re_url.exec(line_hls)![1];
+    return url_hls;
+  });
+  const urls = await Promise.all(promises);
 
-  // hls 즉시 받기는 안되는데 일정시간 기다렸다 하니까 되더라. 뒤쪽에서 뭔가 돌아가는듯?
-  await delay(5000);
+  await popup.close();
 
-  return [popup, url_hls] as const;
+  return urls.map((url_hls, idx) => {
+    const a = weekly.toString().padStart(2, "0");
+    const b = idx + 1;
+    const filename = `${subject}-${a}-${b}.mp4`;
+    return {
+      subject,
+      weekly,
+      url_hls,
+      filename,
+    };
+  });
 }
 
 await signIn(page, settings.credentials);
 
-await gotoLecture(page, settings.cntsId);
+await gotoLecture(page, cntsId);
 const lectures = await extractLectureList(page);
 const list = lectures.map((x) => {
   const link = parseScript(x.script);
   return { title: x.title, link };
 });
 
+const actions = [];
 for (let i = 0; i < list.length; i++) {
-  const title = list[i].title;
-  const [popup, streamUrl] = await openLecturePopup(page, i);
+  const action = await openLecturePopup(page, i);
+  actions.push(...action);
+}
 
-  const order = (i + 1).toString().padStart(2, "0");
-  const filename = `${settings.title}-${order}.mp4`;
-
-  console.log(`${title} - ${filename}`);
-  console.log(streamUrl);
-
+for (const action of actions) {
+  console.log(`${action.filename}`);
   await download({
     quality: "best",
     concurrency: 10,
-    outputFile: filename,
-    streamUrl: streamUrl,
+    outputFile: action.filename,
+    streamUrl: action.url_hls,
   });
-
-  await popup.close();
 }
 
 await page.close();
